@@ -13,8 +13,10 @@ Provides subcommands and interactive mode for:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
+import os
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +40,113 @@ def format_scientific(val: float) -> str:
     if abs(val) < 1e-3 or abs(val) >= 1e5:
         return f"{val:.4e}"
     return f"{val:.4f}"
+
+
+def cmd_batch(args: argparse.Namespace) -> int:
+    """
+    Process batch simulation of bispecific constructs from CSV input to output CSV.
+    Evaluates ternary complex equilibrium, target occupancies, avidity enhancement,
+    and BiTE cytotoxicity / synapse metrics.
+    """
+    input_path = args.input
+    output_path = args.output
+
+    if not os.path.exists(input_path):
+        sys.stderr.write(f"Error: Input file '{input_path}' not found.\n")
+        return 1
+
+    rows_out: List[Dict[str, Any]] = []
+
+    with open(input_path, mode="r", encoding="utf-8", newline="") as f_in:
+        reader = csv.DictReader(f_in)
+        for idx, row in enumerate(reader, start=1):
+            construct_id = row.get("construct_id") or row.get("id") or f"BSAB-{idx:03d}"
+            name = row.get("name") or row.get("construct_name") or f"Construct_{idx}"
+            target_a = row.get("target_a") or row.get("tumor_antigen") or "TargetA"
+            target_b = row.get("target_b") or row.get("effector_antigen") or "CD3"
+
+            ab_conc = float(row.get("ab_conc_m") or row.get("ab_conc") or 1e-9)
+            target_a_conc = float(row.get("target_a_conc_m") or row.get("target_a_conc") or 1e-8)
+            target_b_conc = float(row.get("target_b_conc_m") or row.get("target_b_conc") or 1e-8)
+            kd_a = float(row.get("kd_a_m") or row.get("kd_a") or row.get("kd1") or 1e-9)
+            kd_b = float(row.get("kd_b_m") or row.get("kd_b") or row.get("kd2") or 1e-8)
+            alpha = float(row.get("alpha") or row.get("cooperativity_alpha") or 1.0)
+            linker_len = int(row.get("linker_length_aa") or row.get("linker_len") or 15)
+
+            # Ternary complex equilibrium
+            ternary_res = TernaryComplexModel.solve_equilibrium(
+                antibody_conc_m=ab_conc,
+                target_a_conc_m=target_a_conc,
+                target_b_conc_m=target_b_conc,
+                kd_a=kd_a,
+                kd_b=kd_b,
+                alpha=alpha,
+            )
+
+            # Avidity calculation
+            avidity_res = AvidityEngine.calculate_apparent_avidity(
+                kd_a=kd_a,
+                kd_b=kd_b,
+                linker_length_aa=linker_len,
+            )
+
+            # T-cell lysis prediction if applicable
+            construct = BispecificConstruct(
+                construct_id=construct_id,
+                name=name,
+                arm_a=BindingArm(target_name=target_a, ka=1e5, kd=kd_a * 1e5),
+                arm_b=BindingArm(target_name=target_b, ka=1e5, kd=kd_b * 1e5),
+                linker=LinkerProperties(sequence_or_type=f"(G4S)_{max(1, linker_len // 5)}", length_aa=linker_len),
+                cooperativity_alpha=alpha,
+            )
+            tumor_density = float(row.get("tumor_density") or 50000.0)
+            cd3_density = float(row.get("cd3_density") or 40000.0)
+            et_ratio = float(row.get("et_ratio") or 5.0)
+
+            lysis_res = TCellEngagerPredictor.predict_lysis(
+                construct=construct,
+                target_cell_density=tumor_density,
+                cd3_density=cd3_density,
+                effector_to_target_ratio=et_ratio,
+                antibody_conc_m=ab_conc,
+                incubation_time_hours=24.0,
+            )
+
+            rows_out.append({
+                "construct_id": construct_id,
+                "name": name,
+                "target_a": target_a,
+                "target_b": target_b,
+                "ab_conc_m": ab_conc,
+                "kd_a_m": kd_a,
+                "kd_b_m": kd_b,
+                "cooperativity_alpha": alpha,
+                "ternary_complex_m": ternary_res["ternary_complex"],
+                "ternary_fraction_target_a": ternary_res["ternary_fraction_of_target_a"],
+                "ternary_fraction_target_b": ternary_res["ternary_fraction_of_target_b"],
+                "binary_ab_a_m": ternary_res["binary_ab_a"],
+                "binary_ab_b_m": ternary_res["binary_ab_b"],
+                "free_ab_m": ternary_res["free_ab"],
+                "c_eff_m": avidity_res["effective_concentration_m"],
+                "apparent_avidity_kd_m": avidity_res["apparent_avidity_kd_m"],
+                "avidity_enhancement_factor": avidity_res["avidity_enhancement_factor"],
+                "synapses_per_tumor_cell": lysis_res["synapses_per_tumor_cell"],
+                "specific_lysis_percentage": lysis_res["specific_lysis_percentage"],
+                "crs_risk_category": lysis_res["crs_risk_category"],
+            })
+
+    if output_path:
+        fieldnames = list(rows_out[0].keys()) if rows_out else []
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, mode="w", encoding="utf-8", newline="") as f_out:
+            writer = csv.DictWriter(f_out, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows_out)
+        print(f"Batch processing completed successfully. Processed {len(rows_out)} constructs -> '{output_path}'.")
+    else:
+        print(json.dumps(rows_out, indent=2))
+
+    return 0
 
 
 def cmd_ternary(args: argparse.Namespace) -> int:
@@ -317,6 +426,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_link.add_argument("--kd-b", type=float, default=1e-8, help="KD for Arm B (M)")
     p_link.add_argument("--json", action="store_true", help="Output JSON")
 
+    # Subcommand: batch
+    p_batch = subparsers.add_parser("batch", help="Batch process bispecific constructs from CSV")
+    p_batch.add_argument("-i", "--input", required=True, help="Path to input CSV file")
+    p_batch.add_argument("-o", "--output", help="Path to output CSV file (optional)")
+    p_batch.add_argument("--json", action="store_true", help="Output JSON instead of writing CSV")
+
     # Subcommand: interactive
     subparsers.add_parser("interactive", help="Launch interactive analytics REPL")
 
@@ -326,7 +441,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "ternary":
+    if args.command == "batch":
+        return cmd_batch(args)
+    elif args.command == "ternary":
         return cmd_ternary(args)
     elif args.command == "titration":
         return cmd_titration(args)

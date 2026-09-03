@@ -1,0 +1,11 @@
+construct_id,name,target_a,target_b,ab_conc_m,target_a_conc_m,target_b_conc_m,kd_a_m,kd_b_m,alpha,linker_length_aa,tumor_density,cd3_density,et_ratio
+BSAB-001,Blinatumomab-CD19xCD3-BiTE,CD19,CD3,1.0e-10,5.0e-9,5.0e-9,1.5e-9,1.0e-7,1.0,15,50000,40000,5.0
+BSAB-002,Catumaxomab-EpCAMxCD3,EpCAM,CD3,5.0e-10,1.0e-8,5.0e-9,5.0e-10,2.5e-7,1.2,20,80000,40000,5.0
+BSAB-003,Glofitamab-CD20xCD3-2to1,CD20,CD3,2.0e-10,8.0e-9,5.0e-9,3.0e-9,1.5e-7,2.5,25,120000,40000,10.0
+BSAB-004,Mosunetuzumab-CD20xCD3,CD20,CD3,3.0e-10,8.0e-9,5.0e-9,2.0e-9,1.0e-7,1.0,15,100000,40000,5.0
+BSAB-005,Teclistamab-BCMAxCD3,BCMA,CD3,2.5e-10,4.0e-9,5.0e-9,4.0e-9,3.0e-7,1.5,15,35000,40000,5.0
+BSAB-006,Talquetamab-GPRC5DxCD3,GPRC5D,CD3,1.5e-10,3.0e-9,5.0e-9,1.2e-9,2.0e-7,1.0,15,25000,40000,5.0
+BSAB-007,Elranatamab-BCMAxCD3,BCMA,CD3,2.0e-10,4.0e-9,5.0e-9,3.5e-9,1.8e-7,1.1,20,35000,40000,5.0
+BSAB-008,Tarlatamab-DLL3xCD3,DLL3,CD3,5.0e-10,2.0e-9,5.0e-9,8.0e-10,4.0e-7,1.0,15,15000,40000,5.0
+BSAB-009,Trastuzumab-HER2xHER3-DualTumor,HER2,HER3,1.0e-9,2.0e-8,1.0e-8,5.0e-10,2.0e-9,3.5,30,150000,0,0.0
+BSAB-010,EGFRxMET-DualReceptorKinase,EGFR,c-MET,1.5e-9,1.5e-8,8.0e-9,1.0e-9,1.2e-9,4.0,25,90000,0,0.0

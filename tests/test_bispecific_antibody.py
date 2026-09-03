@@ -390,6 +390,48 @@ class TestCLIExecution(unittest.TestCase):
         data = json.loads(buf.getvalue())
         self.assertIn("r_squared", data)
 
+    def test_cli_batch_csv_and_json(self):
+        import io
+        import json
+        import os
+        import tempfile
+        from contextlib import redirect_stdout
+        from cli import main
+
+        sample_csv_content = (
+            "construct_id,name,target_a,target_b,ab_conc_m,target_a_conc_m,target_b_conc_m,kd_a_m,kd_b_m,alpha,linker_length_aa,tumor_density,cd3_density,et_ratio\n"
+            "BSAB-TEST,Test-BiTE,CD19,CD3,1.0e-10,5.0e-9,5.0e-9,1.5e-9,1.0e-7,1.0,15,50000,40000,5.0\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8") as f_in:
+            f_in.write(sample_csv_content)
+            in_path = f_in.name
+
+        out_path = in_path.replace(".csv", "_out.csv")
+
+        try:
+            # Test CSV output
+            ret_csv = main(["batch", "-i", in_path, "-o", out_path])
+            self.assertEqual(ret_csv, 0)
+            self.assertTrue(os.path.exists(out_path))
+
+            # Test JSON output
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                ret_json = main(["batch", "-i", in_path, "--json"])
+            self.assertEqual(ret_json, 0)
+            data = json.loads(buf.getvalue())
+            self.assertIsInstance(data, list)
+            self.assertEqual(len(data), 1)
+            self.assertEqual(data[0]["construct_id"], "BSAB-TEST")
+            self.assertIn("ternary_complex_m", data[0])
+            self.assertIn("apparent_avidity_kd_m", data[0])
+        finally:
+            if os.path.exists(in_path):
+                os.remove(in_path)
+            if os.path.exists(out_path):
+                os.remove(out_path)
+
 
 if __name__ == "__main__":
     unittest.main()
+
